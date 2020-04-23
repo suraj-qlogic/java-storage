@@ -105,11 +105,6 @@ public class HttpStorageRpc implements StorageRpc {
 
   private static final long MEGABYTE = 1024L * 1024L;
 
-  public static final ExceptionHandler EXCEPTION_HANDLER =
-          ExceptionHandler.newBuilder()
-                  .retryOn(NullPointerException.class)
-                  .build();
-
   public HttpStorageRpc(StorageOptions options) {
     HttpTransportOptions transportOptions = (HttpTransportOptions) options.getTransportOptions();
     HttpTransport transport = transportOptions.getHttpTransportFactory().create();
@@ -138,8 +133,8 @@ public class HttpStorageRpc implements StorageRpc {
     private static final int MAX_BATCH_SIZE = 100;
 
     private final Storage storage;
-    public final LinkedList<BatchRequest> batches;
-    private final LinkedList<MyCallback> retryableList;
+    private final LinkedList<BatchRequest> batches;
+    private final LinkedList<RetryBatchCallBack> retryableList;
     private int currentBatchSize;
 
     private DefaultRpcBatch(Storage storage) {
@@ -198,7 +193,7 @@ public class HttpStorageRpc implements StorageRpc {
         Storage.Objects.Get getCallData = getCall(storageObject, options);
         getCallData.queue(
             batches.getLast(),
-            toJsonCallback(new MyCallback(storageObject, options, callback, getCallData)));
+            toJsonCallback(new RetryBatchCallBack(storageObject, options, callback, getCallData)));
         System.out.println("batches data::" + batches.size());
         currentBatchSize++;
       } catch (IOException ex) {
@@ -206,13 +201,13 @@ public class HttpStorageRpc implements StorageRpc {
       }
     }
 
-    private class MyCallback implements RpcBatch.Callback<StorageObject> {
-      private final StorageObject stroageObject;
+    private class RetryBatchCallBack implements RpcBatch.Callback<StorageObject> {
+      private StorageObject stroageObject;
       private RpcBatch.Callback<StorageObject> objectCallback;
       private Map<Option, ?> optionMap;
       private Object type;
 
-      MyCallback(
+      RetryBatchCallBack(
           StorageObject object,
           Map<Option, ?> options,
           RpcBatch.Callback<StorageObject> objectCallback,
@@ -230,102 +225,10 @@ public class HttpStorageRpc implements StorageRpc {
 
       @Override
       public void onFailure(GoogleJsonError googleJsonError) {
-        // 1. check if this error needs to be rety.
-        // 2. If yes, The n put storageObject in some collection. ex myRetryableList.add
-        // (strogeObject)
-        // We got all the storageObject, which needs to be retried.
-        System.out.println("hello suraj " + this.stroageObject);
-        /*if(this.type instanceof Get){
-          getCall(this.stroageObject,this.optionMap).queue(batches.getLast(),toJsonCallback(new MyCallback(this.stroageObject,this.optionMap, objectCallback,this.type)));
-        }*/
         retryableList.add(this);
-        System.out.println("hello suraj " + this);
-
-        /*  if(myRetryableList.size == MAX_BATCH_SIZE){
-        // collection of StorageObject =====> BatchRequest
-        // TODO:  BatchRequest batchRequest = storage.batch();
-        for(StorageObject ob : myRetryableList){
-          getCall(ob, options).queue(batchRequest, this);
-        }
-        batches.add(batchRequest);
-        currentBatchSize = 0;
-        submit();*/
-        // 3. If no then objectCallback.onFailure(googleJsonError);
+        objectCallback.onFailure(googleJsonError);
       }
     }
-    /*    @Override
-    public void submit() {
-      Span span = startSpan(HttpStorageRpcSpans.SPAN_NAME_BATCH_SUBMIT);
-      Scope scope = tracer.withSpan(span);
-       span.putAttribute("batch size", AttributeValue.longAttributeValue(batches.size()));
-        for (final BatchRequest batch : batches) {
-          // TODO(hailongwen@): instrument 'google-api-java-client' to further break down the span.
-          // Here we only add a annotation to at least know how much time each batch takes.
-          span.addAnnotation("Execute batch request");
-          batch.setBatchUrl(
-              new GenericUrl(String.format("%s/batch/storage/v1", options.getHost())));
-          try{
-            RetryHelper.runWithRetries(new Callable<Void>(){
-                                         @Override
-                                         public Void call() throws IOException {
-                                           try {
-                                             batch.execute();
-                                           } catch (IOException e) {
-                                             e.printStackTrace();
-                                           }
-                                           if(retryableList.size()>0){
-                                             for(MyCallback myData:retryableList){
-                                               if(myData.type instanceof Get){
-                                                 Storage.Objects.Get getData= getCall(myData.stroageObject,myData.optionMap);
-                                                 getData.queue(batches.getLast(),toJsonCallback(new MyCallback(myData.stroageObject,myData.optionMap, myData.objectCallback,getData)));
-                                               }
-                                             }
-                                            throw new SocketTimeoutException("server socket is closed.");
-                                           }
-                                           return null;
-                                         }
-                                       },
-                    options.getRetrySettings(),
-                    BaseService.EXCEPTION_HANDLER,
-                    options.getClock());
-          }catch (RetryHelper.RetryHelperException e) {
-            throw StorageException.translateAndThrow(e);
-          }
-          */
-    /*batch.execute();*/
-    /*
-            }
-        }
-        @Override
-        public void submit() {
-          System.out.println("batch submited");
-          for (final BatchRequest batch : batches) {
-            try{
-            RetryHelper.runWithRetries(new Callable<Void>(){
-                                         @Override
-                                         public Void call() {
-                                           try {
-                                             batch.setBatchUrl(
-                                                     new GenericUrl(String.format("%s/batch/storage/v1", options.getHost())));
-                                             batch.execute();
-                                           } catch (RetryHelper.RetryHelperException | IOException e) {
-                                             e.printStackTrace();
-                                             throw StorageException.translateAndThrow((RetryHelper.RetryHelperException) e);
-                                           }
-                                           return null;
-                                         }
-                                       },
-                    options.getRetrySettings(),
-                    EXCEPTION_HANDLER,
-                    options.getClock());
-            }catch (RetryHelper.RetryHelperException e) {
-              throw StorageException.translateAndThrow(e);
-            }
-          }
-        }
-      }
-    */
-    // original commet
     @Override
     public void submit() {
       Span span = startSpan(HttpStorageRpcSpans.SPAN_NAME_BATCH_SUBMIT);
@@ -336,8 +239,7 @@ public class HttpStorageRpc implements StorageRpc {
           // TODO(hailongwen@): instrument 'google-api-java-client' to further break down the span.
           // Here we only add a annotation to at least know how much time each batch takes.
           span.addAnnotation("Execute batch request");
-          batch.setBatchUrl(
-              new GenericUrl(String.format("%s/batch/storage/v1", options.getHost())));
+          batch.setBatchUrl(new GenericUrl(String.format("%s/batch/storage/v1", options.getHost())));
           batch.execute();
         }
       } catch (IOException ex) {
@@ -348,6 +250,7 @@ public class HttpStorageRpc implements StorageRpc {
           processBatchRequest();
           SocketTimeoutException socketTimeoutException =
               new SocketTimeoutException("socket Timeout");
+ //         BatchRetryException exception = new BatchRetryException("RetryBatchExecution");
           StorageException serviceException = translate(socketTimeoutException);
           throw serviceException;
         }
@@ -358,16 +261,16 @@ public class HttpStorageRpc implements StorageRpc {
 
     private void processBatchRequest() {
       if (retryableList.size() > 0) {
-        for (MyCallback myData : retryableList) {
-          if (myData.type instanceof Get) {
+        for (RetryBatchCallBack retryData : retryableList) {
+          if (retryData.type instanceof Get) {
             Get getData = null;
             try {
-              getData = getCall(myData.stroageObject, myData.optionMap);
+              getData = getCall(retryData.stroageObject, retryData.optionMap);
               getData.queue(
                       batches.getLast(),
                       toJsonCallback(
-                              new MyCallback(
-                                      myData.stroageObject, myData.optionMap, myData.objectCallback, getData)));
+                              new RetryBatchCallBack(
+                                      retryData.stroageObject, retryData.optionMap, retryData.objectCallback, getData)));
             } catch (IOException e) {
               e.printStackTrace();
             }
@@ -394,6 +297,9 @@ public class HttpStorageRpc implements StorageRpc {
 
   private static StorageException translate(IOException exception) {
     return new StorageException(exception);
+  }
+  private static StorageException translate(BatchRetryException exception) {
+    return new StorageException(new IOException(exception.message));
   }
 
   private static StorageException translate(GoogleJsonError exception) {

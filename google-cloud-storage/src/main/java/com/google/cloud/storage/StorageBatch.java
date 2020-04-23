@@ -153,7 +153,6 @@ public class StorageBatch {
 
   /** Submits this batch for processing using a single RPC request. */
   public void submit() {
-    // RetryHelper.runWithRetries(batch.submit(),);
     try {
       RetryHelper.runWithRetries(
           new Callable<Void>() {
@@ -164,7 +163,7 @@ public class StorageBatch {
             }
           },
           options.getRetrySettings(),
-          BaseService.EXCEPTION_HANDLER,
+          new BatchRetryHelper.BatchRetryAlgorithm(),
           options.getClock());
     } catch (RetryHelper.RetryHelperException e) {
       e.printStackTrace();

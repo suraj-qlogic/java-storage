@@ -21,6 +21,7 @@ import com.google.api.core.InternalApi;
 import com.google.cloud.BaseServiceException;
 import com.google.cloud.RetryHelper.RetryHelperException;
 import com.google.cloud.http.BaseHttpServiceException;
+import com.google.cloud.storage.spi.v1.BatchRetryException;
 import com.google.common.collect.ImmutableSet;
 import java.io.IOException;
 import java.util.Set;
@@ -45,7 +46,6 @@ public final class StorageException extends BaseHttpServiceException {
           new Error(500, null),
           new Error(429, null),
           new Error(408, null),
-          new Error(404,null),
           new Error(null, INTERNAL_ERROR),
           new Error(null, CONNECTION_CLOSED_PREMATURELY));
 

@@ -1,17 +1,26 @@
-/*
+
 package com.google.cloud.storage;
 
 import com.google.api.gax.retrying.ResultRetryAlgorithm;
-import com.google.api.gax.retrying.RetrySettings;
 import com.google.api.gax.retrying.TimedAttemptSettings;
-import com.google.cloud.RetryHelper;
-import com.google.common.base.Throwables;
-import io.grpc.Context;
-import org.threeten.bp.Duration;
+import com.google.cloud.storage.spi.v1.BatchRetryException;
 
 import java.util.concurrent.CancellationException;
 
 public class BatchRetryHelper {
-  
+
+  public static class BatchRetryAlgorithm<T> implements ResultRetryAlgorithm<T> {
+
+    @Override
+    public TimedAttemptSettings createNextAttempt(
+        Throwable prevThrowable, T prevResponse, TimedAttemptSettings prevSettings) {
+      return null;
+    }
+
+    @Override
+    public boolean shouldRetry(Throwable prevThrowable, T prevResponse)
+        throws CancellationException {
+      return prevThrowable != null && (prevThrowable instanceof BatchRetryException);
+    }
+  }
 }
-*/
