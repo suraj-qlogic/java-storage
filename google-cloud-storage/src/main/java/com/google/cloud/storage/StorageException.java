@@ -45,6 +45,7 @@ public final class StorageException extends BaseHttpServiceException {
           new Error(500, null),
           new Error(429, null),
           new Error(408, null),
+          new Error(404,null),
           new Error(null, INTERNAL_ERROR),
           new Error(null, CONNECTION_CLOSED_PREMATURELY));
 
