@@ -187,14 +187,10 @@ public class HttpStorageRpc implements StorageRpc {
           batches.add(storage.batch());
           currentBatchSize = 0;
         }
-        System.out.println("batches data::" + batches.size());
-
-        // getCall(storageObject, options).queue(batches.getLast(), toJsonCallback(callback));
         Storage.Objects.Get getCallData = getCall(storageObject, options);
         getCallData.queue(
             batches.getLast(),
             toJsonCallback(new RetryBatchCallBack(storageObject, options, callback, getCallData)));
-        System.out.println("batches data::" + batches.size());
         currentBatchSize++;
       } catch (IOException ex) {
         throw translate(ex);
@@ -290,7 +286,7 @@ public class HttpStorageRpc implements StorageRpc {
       @Override
       public void onFailure(GoogleJsonError googleJsonError, HttpHeaders httpHeaders)
           throws IOException {
-        callback.onFailure(googleJsonError);
+          callback.onFailure(googleJsonError);
       }
     };
   }
@@ -512,7 +508,7 @@ public class HttpStorageRpc implements StorageRpc {
       SocketTimeoutException socketTimeoutException = new SocketTimeoutException("socket Timeout");
       StorageException serviceException = translate(socketTimeoutException);
       if (serviceException.getCode() == HTTP_NOT_FOUND) {
-        //todo:update and remove commet return null;
+        return null;
       }
       throw serviceException;
     } finally {
