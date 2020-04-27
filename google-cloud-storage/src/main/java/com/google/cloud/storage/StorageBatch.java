@@ -20,18 +20,14 @@ import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 
 import com.google.api.client.googleapis.json.GoogleJsonError;
 import com.google.api.services.storage.model.StorageObject;
-import com.google.cloud.BaseService;
 import com.google.cloud.RetryHelper;
 import com.google.cloud.storage.Storage.BlobGetOption;
 import com.google.cloud.storage.Storage.BlobSourceOption;
 import com.google.cloud.storage.Storage.BlobTargetOption;
-import com.google.cloud.storage.spi.v1.HttpStorageRpc;
 import com.google.cloud.storage.spi.v1.RpcBatch;
 import com.google.cloud.storage.spi.v1.StorageRpc;
 import com.google.common.annotations.VisibleForTesting;
-
 import java.io.IOException;
-import java.net.SocketTimeoutException;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
@@ -182,8 +178,8 @@ public class StorageBatch {
         StorageException serviceException = new StorageException(googleJsonError);
         if (serviceException.getCode() == HTTP_NOT_FOUND) {
           result.success(false);
-            result.error(serviceException);
         } else {
+          result.error(serviceException);
         }
       }
     };
@@ -202,9 +198,7 @@ public class StorageBatch {
       public void onFailure(GoogleJsonError googleJsonError) {
         StorageException serviceException = new StorageException(googleJsonError);
         if (serviceException.getCode() == HTTP_NOT_FOUND) {
-
-          // result.success(null);
-          System.out.println("google json error"+googleJsonError);
+          result.success(null);
         } else {
           result.error(serviceException);
         }

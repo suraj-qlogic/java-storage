@@ -54,9 +54,6 @@ import com.google.api.services.storage.model.Policy;
 import com.google.api.services.storage.model.ServiceAccount;
 import com.google.api.services.storage.model.StorageObject;
 import com.google.api.services.storage.model.TestIamPermissionsResponse;
-import com.google.cloud.BaseService;
-import com.google.cloud.ExceptionHandler;
-import com.google.cloud.RetryHelper;
 import com.google.cloud.Tuple;
 import com.google.cloud.http.CensusHttpModule;
 import com.google.cloud.http.HttpTransportOptions;
@@ -82,11 +79,9 @@ import java.io.OutputStream;
 import java.math.BigInteger;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 
 public class HttpStorageRpc implements StorageRpc {
   public static final String DEFAULT_PROJECTION = "full";
@@ -134,7 +129,7 @@ public class HttpStorageRpc implements StorageRpc {
 
     private final Storage storage;
     private final LinkedList<BatchRequest> batches;
-    private final LinkedList<RetryBatchCallBack> retryableList;
+    private final LinkedList<RetryBatchCallBack> retryBatchList;
     private int currentBatchSize;
 
     private DefaultRpcBatch(Storage storage) {
@@ -142,7 +137,7 @@ public class HttpStorageRpc implements StorageRpc {
       batches = new LinkedList<>();
       // add OpenCensus HttpRequestInitializer
       batches.add(storage.batch(batchRequestInitializer));
-      retryableList = new LinkedList<>();
+      retryBatchList = new LinkedList<>();
     }
 
     @Override
@@ -154,6 +149,11 @@ public class HttpStorageRpc implements StorageRpc {
           currentBatchSize = 0;
         }
         deleteCall(storageObject, options).queue(batches.getLast(), toJsonCallback(callback));
+        Storage.Objects.Delete deleteOperation = deleteCall(storageObject, options);
+        deleteOperation.queue(
+            batches.getLast(),
+            toJsonCallback(
+                new RetryBatchCallBack(storageObject, options, callback, deleteOperation)));
         currentBatchSize++;
       } catch (IOException ex) {
         throw translate(ex);
@@ -170,7 +170,11 @@ public class HttpStorageRpc implements StorageRpc {
           batches.add(storage.batch());
           currentBatchSize = 0;
         }
-        patchCall(storageObject, options).queue(batches.getLast(), toJsonCallback(callback));
+        Storage.Objects.Patch patchOperation = patchCall(storageObject, options);
+        patchOperation.queue(
+            batches.getLast(),
+            toJsonCallback(
+                new RetryBatchCallBack(storageObject, options, callback, patchOperation)));
         currentBatchSize++;
       } catch (IOException ex) {
         throw translate(ex);
@@ -197,16 +201,16 @@ public class HttpStorageRpc implements StorageRpc {
       }
     }
 
-    private class RetryBatchCallBack implements RpcBatch.Callback<StorageObject> {
+    private class RetryBatchCallBack<T> implements RpcBatch.Callback<T> {
       private StorageObject stroageObject;
-      private RpcBatch.Callback<StorageObject> objectCallback;
+      private RpcBatch.Callback<T> objectCallback;
       private Map<Option, ?> optionMap;
       private Object type;
 
       RetryBatchCallBack(
           StorageObject object,
           Map<Option, ?> options,
-          RpcBatch.Callback<StorageObject> objectCallback,
+          RpcBatch.Callback<T> objectCallback,
           Object type) {
         this.stroageObject = object;
         this.objectCallback = objectCallback;
@@ -215,16 +219,21 @@ public class HttpStorageRpc implements StorageRpc {
       }
 
       @Override
-      public void onSuccess(StorageObject response) {
+      public void onSuccess(T response) {
         objectCallback.onSuccess(response);
       }
 
       @Override
       public void onFailure(GoogleJsonError googleJsonError) {
-        retryableList.add(this);
-        objectCallback.onFailure(googleJsonError);
+        if (googleJsonError.getCode() == HTTP_NOT_FOUND) {
+          objectCallback.onSuccess(null);
+        } else {
+          retryBatchList.add(this);
+          objectCallback.onFailure(googleJsonError);
+        }
       }
     }
+
     @Override
     public void submit() {
       Span span = startSpan(HttpStorageRpcSpans.SPAN_NAME_BATCH_SUBMIT);
@@ -235,20 +244,18 @@ public class HttpStorageRpc implements StorageRpc {
           // TODO(hailongwen@): instrument 'google-api-java-client' to further break down the span.
           // Here we only add a annotation to at least know how much time each batch takes.
           span.addAnnotation("Execute batch request");
-          batch.setBatchUrl(new GenericUrl(String.format("%s/batch/storage/v1", options.getHost())));
+          batch.setBatchUrl(
+              new GenericUrl(String.format("%s/batch/storage/v1", options.getHost())));
           batch.execute();
         }
       } catch (IOException ex) {
         span.setStatus(Status.UNKNOWN.withDescription(ex.getMessage()));
         throw translate(ex);
       } finally {
-        if (retryableList.size() > 0) {
+        if (retryBatchList.size() > 0) {
           processBatchRequest();
-          SocketTimeoutException socketTimeoutException =
-              new SocketTimeoutException("socket Timeout");
- //         BatchRetryException exception = new BatchRetryException("RetryBatchExecution");
-          StorageException serviceException = translate(socketTimeoutException);
-          throw serviceException;
+          BatchRetryException exception = new BatchRetryException("BatchExecutionException");
+          throw exception;
         }
         scope.close();
         span.end();
@@ -256,22 +263,26 @@ public class HttpStorageRpc implements StorageRpc {
     }
 
     private void processBatchRequest() {
-      if (retryableList.size() > 0) {
-        for (RetryBatchCallBack retryData : retryableList) {
-          if (retryData.type instanceof Get) {
-            Get getData = null;
-            try {
-              getData = getCall(retryData.stroageObject, retryData.optionMap);
-              getData.queue(
-                      batches.getLast(),
-                      toJsonCallback(
-                              new RetryBatchCallBack(
-                                      retryData.stroageObject, retryData.optionMap, retryData.objectCallback, getData)));
-            } catch (IOException e) {
-              e.printStackTrace();
-            }
+      if (retryBatchList.size() > 0) {
+        for (RetryBatchCallBack retryBatchCallBack : retryBatchList) {
+          if (retryBatchCallBack.type instanceof Storage.Objects.Get) {
+            addGet(
+                retryBatchCallBack.stroageObject,
+                retryBatchCallBack.objectCallback,
+                retryBatchCallBack.optionMap);
+          } else if (retryBatchCallBack.type instanceof Storage.Objects.Delete) {
+            addDelete(
+                retryBatchCallBack.stroageObject,
+                retryBatchCallBack.objectCallback,
+                retryBatchCallBack.optionMap);
+          } else if (retryBatchCallBack.type instanceof Storage.Objects.Patch) {
+            addPatch(
+                retryBatchCallBack.stroageObject,
+                retryBatchCallBack.objectCallback,
+                retryBatchCallBack.optionMap);
           }
         }
+        retryBatchList.clear();
       }
     }
   }
@@ -286,7 +297,7 @@ public class HttpStorageRpc implements StorageRpc {
       @Override
       public void onFailure(GoogleJsonError googleJsonError, HttpHeaders httpHeaders)
           throws IOException {
-          callback.onFailure(googleJsonError);
+        callback.onFailure(googleJsonError);
       }
     };
   }
@@ -294,8 +305,9 @@ public class HttpStorageRpc implements StorageRpc {
   private static StorageException translate(IOException exception) {
     return new StorageException(exception);
   }
+
   private static StorageException translate(BatchRetryException exception) {
-    return new StorageException(new IOException(exception.message));
+    return new StorageException(0, exception.message);
   }
 
   private static StorageException translate(GoogleJsonError exception) {

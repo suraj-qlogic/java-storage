@@ -16,9 +16,11 @@
 
 package com.google.cloud.storage.spi.v1;
 
-public class BatchRetryException extends RuntimeException{
-    String message;
-    BatchRetryException(String msg){
-        this.message=msg;
-    }
+public class BatchRetryException extends RuntimeException {
+  String message;
+
+  BatchRetryException(String msg) {
+    super(msg);
+    this.message = msg;
+  }
 }

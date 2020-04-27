@@ -21,7 +21,6 @@ import com.google.api.core.InternalApi;
 import com.google.cloud.BaseServiceException;
 import com.google.cloud.RetryHelper.RetryHelperException;
 import com.google.cloud.http.BaseHttpServiceException;
-import com.google.cloud.storage.spi.v1.BatchRetryException;
 import com.google.common.collect.ImmutableSet;
 import java.io.IOException;
 import java.util.Set;
