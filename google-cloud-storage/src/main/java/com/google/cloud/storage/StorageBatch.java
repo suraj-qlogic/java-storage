@@ -20,6 +20,7 @@ import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 
 import com.google.api.client.googleapis.json.GoogleJsonError;
 import com.google.api.services.storage.model.StorageObject;
+import com.google.cloud.BaseService;
 import com.google.cloud.RetryHelper;
 import com.google.cloud.storage.Storage.BlobGetOption;
 import com.google.cloud.storage.Storage.BlobSourceOption;
@@ -159,7 +160,7 @@ public class StorageBatch {
             }
           },
           options.getRetrySettings(),
-          new BatchRetryHelper.BatchRetryAlgorithm(),
+          BaseService.EXCEPTION_HANDLER,
           options.getClock());
     } catch (RetryHelper.RetryHelperException e) {
       e.printStackTrace();

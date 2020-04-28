@@ -253,9 +253,10 @@ public class HttpStorageRpc implements StorageRpc {
         throw translate(ex);
       } finally {
         if (retryBatchList.size() > 0) {
+          System.out.println("batching exception");
           processBatchRequest();
-          BatchRetryException exception = new BatchRetryException("BatchExecutionException");
-          throw exception;
+          StorageException batchingException = new StorageException(500, "batchError");
+          throw batchingException;
         }
         scope.close();
         span.end();
@@ -304,10 +305,6 @@ public class HttpStorageRpc implements StorageRpc {
 
   private static StorageException translate(IOException exception) {
     return new StorageException(exception);
-  }
-
-  private static StorageException translate(BatchRetryException exception) {
-    return new StorageException(0, exception.message);
   }
 
   private static StorageException translate(GoogleJsonError exception) {
