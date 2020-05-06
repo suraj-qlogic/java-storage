@@ -27,6 +27,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.google.api.client.googleapis.json.GoogleJsonError;
 import com.google.api.core.ApiClock;
@@ -3071,5 +3072,53 @@ public class StorageImplTest {
     WriteChannel writer = new BlobWriteChannel(options, new URL(SIGNED_URL));
     assertNotNull(writer);
     assertTrue(writer.isOpen());
+  }
+
+  @Test
+  public void testBatchRetry() {
+    options =
+        StorageOptions.newBuilder()
+            .setProjectId("projectId")
+            .setClock(TIME_SOURCE)
+            .setServiceRpcFactory(rpcFactoryMock)
+            .setRetrySettings(ServiceOptions.getDefaultRetrySettings())
+            .build();
+    BlobId blobId1 = BlobId.of(BUCKET_NAME1, BLOB_NAME1);
+    BlobId blobId2 = BlobId.of(BUCKET_NAME1, BLOB_NAME2);
+    RpcBatch batchMock = EasyMock.createMock(RpcBatch.class);
+    Capture<RpcBatch.Callback<StorageObject>> callback1 = Capture.newInstance();
+    Capture<RpcBatch.Callback<StorageObject>> callback2 = Capture.newInstance();
+    batchMock.addGet(
+        EasyMock.eq(blobId1.toPb()),
+        EasyMock.capture(callback1),
+        EasyMock.eq(ImmutableMap.<StorageRpc.Option, Object>of()));
+    batchMock.addGet(
+        EasyMock.eq(blobId2.toPb()),
+        EasyMock.capture(callback2),
+        EasyMock.eq(ImmutableMap.<StorageRpc.Option, Object>of()));
+    EasyMock.expect(storageRpcMock.createBatch()).andReturn(batchMock);
+    batchMock.submit();
+    EasyMock.expectLastCall().andThrow(new StorageException(500, "batchError")).times(6);
+    EasyMock.replay(storageRpcMock, batchMock);
+    initializeService();
+    StorageBatch storageBatch = storage.batch();
+    StorageBatchResult<Blob> batchResult = storageBatch.get(blobId1);
+    StorageBatchResult<Blob> batchResult2 = storageBatch.get(blobId2);
+    storageBatch.submit();
+    try {
+      batchResult.get();
+      fail("No result available yet.");
+    } catch (IllegalStateException ex) {
+      // expected
+    }
+    RpcBatch.Callback<StorageObject> capturedCallback = callback1.getValue();
+    capturedCallback.onFailure(new GoogleJsonError());
+    try {
+      batchResult2.get();
+      fail("No result available yet.");
+    } catch (IllegalStateException ex) {
+      // expected
+    }
+    EasyMock.verify(batchMock);
   }
 }

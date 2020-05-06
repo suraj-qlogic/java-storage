@@ -163,7 +163,6 @@ public class StorageBatch {
           BaseService.EXCEPTION_HANDLER,
           options.getClock());
     } catch (RetryHelper.RetryHelperException e) {
-      e.printStackTrace();
     }
   }
 
