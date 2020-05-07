@@ -3145,25 +3145,23 @@ public class StorageImplTest {
         EasyMock.eq(ImmutableMap.<StorageRpc.Option, Object>of()));
     EasyMock.expect(storageRpcMock.createBatch()).andReturn(batchMock);
     batchMock.submit();
-    EasyMock.expectLastCall().andThrow(new StorageException(500, "batchError")).times(6);
+    EasyMock.expectLastCall().andThrow(new StorageException(500, "batchError")).times(2);
+    batchMock.submit();
     EasyMock.replay(storageRpcMock, batchMock);
     initializeService();
     StorageBatch storageBatch = storage.batch();
     StorageBatchResult<Blob> batchResult = storageBatch.get(blobId1);
     StorageBatchResult<Blob> batchResult2 = storageBatch.get(blobId2);
     storageBatch.submit();
-    try {
-      batchResult.get();
-      Assert.fail("No result available yet.");
-    } catch (IllegalStateException ex) {
-      // expected
-    }
-    RpcBatch.Callback<StorageObject> capturedCallback = callback1.getValue();
-    capturedCallback.onFailure(new GoogleJsonError());
+    callback1.getValue().onSuccess(blobId1.toPb());
+    callback2.getValue().onFailure(new GoogleJsonError());
+    Blob actualBlob = batchResult.get();
+    assertEquals(expectedBlob1.getBucket(), actualBlob.getBucket());
+    assertEquals(expectedBlob1.getName(), actualBlob.getName());
     try {
       batchResult2.get();
       Assert.fail("");
-    } catch (IllegalStateException ex) {
+    } catch (StorageException ex) {
       // expected
     }
     EasyMock.verify(batchMock);

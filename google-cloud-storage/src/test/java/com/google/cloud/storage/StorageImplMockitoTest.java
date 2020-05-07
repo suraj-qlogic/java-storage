@@ -18,8 +18,11 @@ package com.google.cloud.storage;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.api.core.ApiClock;
@@ -27,6 +30,7 @@ import com.google.cloud.Identity;
 import com.google.cloud.Policy;
 import com.google.cloud.ServiceOptions;
 import com.google.cloud.storage.spi.StorageRpcFactory;
+import com.google.cloud.storage.spi.v1.RpcBatch;
 import com.google.cloud.storage.spi.v1.StorageRpc;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -45,6 +49,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 public class StorageImplMockitoTest {
 
@@ -343,7 +348,7 @@ public class StorageImplMockitoTest {
   private StorageRpcFactory rpcFactoryMock;
   private StorageRpc storageRpcMock;
   private Storage storage;
-
+  private StorageBatch storageBatchMock;
   private Blob expectedBlob1, expectedBlob2, expectedBlob3, expectedUpdated;
   private Bucket expectedBucket1, expectedBucket2, expectedBucket3;
 
@@ -362,6 +367,7 @@ public class StorageImplMockitoTest {
   public void setUp() {
     rpcFactoryMock = mock(StorageRpcFactory.class);
     storageRpcMock = mock(StorageRpc.class);
+    storageBatchMock = mock(StorageBatch.class);
     when(rpcFactoryMock.create(any(StorageOptions.class))).thenReturn(storageRpcMock);
     options =
         StorageOptions.newBuilder()
@@ -412,5 +418,28 @@ public class StorageImplMockitoTest {
     Bucket bucket =
         storage.create(BUCKET_INFO1, BUCKET_TARGET_METAGENERATION, BUCKET_TARGET_PREDEFINED_ACL);
     assertEquals(expectedBucket1, bucket);
+  }
+
+  @Test
+  public void testFailedBatchWithRetry() {
+    options =
+        StorageOptions.newBuilder()
+            .setProjectId("projectId")
+            .setClock(TIME_SOURCE)
+            .setServiceRpcFactory(rpcFactoryMock)
+            .setRetrySettings(ServiceOptions.getDefaultRetrySettings())
+            .build();
+    final RpcBatch batchMock = mock(RpcBatch.class);
+    when(storageRpcMock.createBatch()).thenReturn(batchMock);
+    StorageException storageException = new StorageException(503, "batchError");
+    Mockito.doThrow(storageException).when(batchMock).submit();
+    initializeService();
+    StorageBatch storageBatch = storage.batch();
+    try {
+      storageBatch.submit();
+      fail("");
+    } catch (StorageException e) {
+    }
+    verify(batchMock, times(6)).submit();
   }
 }

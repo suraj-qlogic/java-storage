@@ -256,8 +256,7 @@ public class HttpStorageRpc implements StorageRpc {
       } finally {
         if (failedBatches.size() > 0) {
           processBatchRequest();
-          StorageException batchingException = new StorageException(500, "batchError");
-          throw batchingException;
+          throw new StorageException(500, "batchError");
         }
         scope.close();
         span.end(HttpStorageRpcSpans.END_SPAN_OPTIONS);
@@ -292,7 +291,7 @@ public class HttpStorageRpc implements StorageRpc {
   private static <T> JsonBatchCallback<T> toJsonCallback(final RpcBatch.Callback<T> callback) {
     return new JsonBatchCallback<T>() {
       @Override
-      public void onSuccess(T response, HttpHeaders httpHeaders) throws IOException {
+      public void onSuccess(T response, HttpHeaders httpHeaders) {
         callback.onSuccess(response);
       }
 
