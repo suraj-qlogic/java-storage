@@ -127,14 +127,14 @@ public class HttpStorageRpc implements StorageRpc {
     private final Storage storage;
     private final LinkedList<BatchRequest> batches;
     private int currentBatchSize;
-    private final LinkedList<RetryBatchCallBack> failedBatches;
+    private final List<RetryBatchCallBack> failedRpc;
 
     private DefaultRpcBatch(Storage storage) {
       this.storage = storage;
       batches = new LinkedList<>();
       // add OpenCensus HttpRequestInitializer
       batches.add(storage.batch(batchRequestInitializer));
-      failedBatches = new LinkedList<>();
+      failedRpc = new LinkedList<>();
     }
 
     @Override
@@ -199,10 +199,10 @@ public class HttpStorageRpc implements StorageRpc {
 
     /** A class for generic batch callbacks. */
     private class RetryBatchCallBack<T> implements RpcBatch.Callback<T> {
-      private StorageObject stroageObject;
-      private RpcBatch.Callback<T> objectCallback;
-      private Map<Option, ?> optionMap;
-      private Object type;
+      private final StorageObject stroageObject;
+      private final RpcBatch.Callback<T> objectCallback;
+      private final Map<Option, ?> optionMap;
+      private final Object type;
 
       RetryBatchCallBack(
           StorageObject object,
@@ -229,7 +229,7 @@ public class HttpStorageRpc implements StorageRpc {
         } else {
           StorageException storageException = new StorageException(googleJsonError);
           if (storageException.isRetryable()) {
-            failedBatches.add(this);
+            failedRpc.add(this);
           }
           objectCallback.onFailure(googleJsonError);
         }
@@ -254,7 +254,7 @@ public class HttpStorageRpc implements StorageRpc {
         span.setStatus(Status.UNKNOWN.withDescription(ex.getMessage()));
         throw translate(ex);
       } finally {
-        if (failedBatches.size() > 0) {
+        if (failedRpc.size() > 0) {
           processBatchRequest();
           throw new StorageException(500, "batchError");
         }
@@ -264,26 +264,31 @@ public class HttpStorageRpc implements StorageRpc {
     }
 
     private void processBatchRequest() {
-      if (failedBatches.size() > 0) {
-        for (RetryBatchCallBack retryBatchCallBack : failedBatches) {
-          if (retryBatchCallBack.type instanceof Storage.Objects.Get) {
-            addGet(
-                retryBatchCallBack.stroageObject,
-                retryBatchCallBack.objectCallback,
-                retryBatchCallBack.optionMap);
-          } else if (retryBatchCallBack.type instanceof Storage.Objects.Delete) {
-            addDelete(
-                retryBatchCallBack.stroageObject,
-                retryBatchCallBack.objectCallback,
-                retryBatchCallBack.optionMap);
-          } else if (retryBatchCallBack.type instanceof Storage.Objects.Patch) {
-            addPatch(
-                retryBatchCallBack.stroageObject,
-                retryBatchCallBack.objectCallback,
-                retryBatchCallBack.optionMap);
+      if (failedRpc.size() > 0) {
+        for (RetryBatchCallBack retryBatchCallBack : failedRpc) {
+          String className = retryBatchCallBack.type.getClass().getSimpleName();
+          switch (className) {
+            case "Get":
+              addGet(
+                  retryBatchCallBack.stroageObject,
+                  retryBatchCallBack.objectCallback,
+                  retryBatchCallBack.optionMap);
+              break;
+            case "Delete":
+              addDelete(
+                  retryBatchCallBack.stroageObject,
+                  retryBatchCallBack.objectCallback,
+                  retryBatchCallBack.optionMap);
+              break;
+            case "Patch":
+              addPatch(
+                  retryBatchCallBack.stroageObject,
+                  retryBatchCallBack.objectCallback,
+                  retryBatchCallBack.optionMap);
+              break;
           }
         }
-        failedBatches.clear();
+        failedRpc.clear();
       }
     }
   }
