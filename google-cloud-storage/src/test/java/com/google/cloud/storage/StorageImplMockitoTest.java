@@ -266,6 +266,10 @@ public class StorageImplMockitoTest {
 
   private static final ServiceAccount SERVICE_ACCOUNT = ServiceAccount.of("test@google.com");
   private static final GoogleJsonError GOOGLE_JSON_ERROR = new GoogleJsonError();
+  private static final int JSON_ERROR_CODE = 503;
+  private static final String JSON_ERROR_MESSAGE = "message";
+  private static final int BATCH_ERROR_CODE = 500;
+  private static final String BATCH_ERROR_MESSAGE = "batchError";
   private static final com.google.api.services.storage.model.Policy API_POLICY1 =
       new com.google.api.services.storage.model.Policy()
           .setBindings(
@@ -437,7 +441,7 @@ public class StorageImplMockitoTest {
             .build();
     RpcBatch batchMock = mock(RpcBatch.class);
     when(storageRpcMock.createBatch()).thenReturn(batchMock);
-    StorageException storageException = new StorageException(500, "batchError");
+    StorageException storageException = new StorageException(BATCH_ERROR_CODE, BATCH_ERROR_MESSAGE);
     Mockito.doThrow(storageException).when(batchMock).submit();
     initializeService();
     StorageBatch storageBatch = storage.batch();
@@ -482,8 +486,8 @@ public class StorageImplMockitoTest {
               @Override
               public Void answer(InvocationOnMock invocation) throws Throwable {
                 RpcBatch.Callback<StorageObject> callback = invocation.getArgument(1);
-                GOOGLE_JSON_ERROR.setCode(503);
-                GOOGLE_JSON_ERROR.setMessage("message");
+                GOOGLE_JSON_ERROR.setCode(JSON_ERROR_CODE);
+                GOOGLE_JSON_ERROR.setMessage(JSON_ERROR_MESSAGE);
                 callback.onFailure(GOOGLE_JSON_ERROR);
                 return null;
               }
@@ -495,8 +499,8 @@ public class StorageImplMockitoTest {
             Mockito.<StorageRpc.Option, Object>anyMap());
     initializeService();
     StorageBatch batch = storage.batch();
-    doThrow(new StorageException(500, "batchError"))
-        .doThrow(new StorageException(500, "batchError"))
+    doThrow(new StorageException(BATCH_ERROR_CODE, BATCH_ERROR_MESSAGE))
+        .doThrow(new StorageException(BATCH_ERROR_CODE, BATCH_ERROR_MESSAGE))
         .doNothing()
         .when(batchMock)
         .submit();
@@ -510,7 +514,7 @@ public class StorageImplMockitoTest {
       blobStorageBatchResult2.get();
       fail("");
     } catch (StorageException ex) {
-      assertEquals("message", ex.getMessage());
+      assertEquals(JSON_ERROR_MESSAGE, ex.getMessage());
     }
     verify(batchMock, (times(2)))
         .addGet(
