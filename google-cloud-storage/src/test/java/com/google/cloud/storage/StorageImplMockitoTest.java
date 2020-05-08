@@ -18,15 +18,23 @@ package com.google.cloud.storage;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.google.api.client.googleapis.json.GoogleJsonError;
 import com.google.api.core.ApiClock;
+import com.google.api.services.storage.model.StorageObject;
 import com.google.cloud.Identity;
 import com.google.cloud.Policy;
 import com.google.cloud.ServiceOptions;
 import com.google.cloud.storage.spi.StorageRpcFactory;
+import com.google.cloud.storage.spi.v1.RpcBatch;
 import com.google.cloud.storage.spi.v1.StorageRpc;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -45,6 +53,9 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 public class StorageImplMockitoTest {
 
@@ -254,7 +265,11 @@ public class StorageImplMockitoTest {
           .build();
 
   private static final ServiceAccount SERVICE_ACCOUNT = ServiceAccount.of("test@google.com");
-
+  private static final GoogleJsonError GOOGLE_JSON_ERROR = new GoogleJsonError();
+  private static final int JSON_ERROR_CODE = 503;
+  private static final String JSON_ERROR_MESSAGE = "message";
+  private static final int BATCH_ERROR_CODE = 500;
+  private static final String BATCH_ERROR_MESSAGE = "batchError";
   private static final com.google.api.services.storage.model.Policy API_POLICY1 =
       new com.google.api.services.storage.model.Policy()
           .setBindings(
@@ -343,7 +358,6 @@ public class StorageImplMockitoTest {
   private StorageRpcFactory rpcFactoryMock;
   private StorageRpc storageRpcMock;
   private Storage storage;
-
   private Blob expectedBlob1, expectedBlob2, expectedBlob3, expectedUpdated;
   private Bucket expectedBucket1, expectedBucket2, expectedBucket3;
 
@@ -412,5 +426,100 @@ public class StorageImplMockitoTest {
     Bucket bucket =
         storage.create(BUCKET_INFO1, BUCKET_TARGET_METAGENERATION, BUCKET_TARGET_PREDEFINED_ACL);
     assertEquals(expectedBucket1, bucket);
+  }
+
+  @Test
+  public void testFailedBatchWithRetry() {
+    options =
+        StorageOptions.newBuilder()
+            .setProjectId("projectId")
+            .setClock(TIME_SOURCE)
+            .setServiceRpcFactory(rpcFactoryMock)
+            .setRetrySettings(ServiceOptions.getDefaultRetrySettings())
+            .build();
+    RpcBatch batchMock = mock(RpcBatch.class);
+    when(storageRpcMock.createBatch()).thenReturn(batchMock);
+    StorageException storageException = new StorageException(BATCH_ERROR_CODE, BATCH_ERROR_MESSAGE);
+    Mockito.doThrow(storageException).when(batchMock).submit();
+    initializeService();
+    StorageBatch storageBatch = storage.batch();
+    try {
+      storageBatch.submit();
+      fail("");
+    } catch (StorageException e) {
+    }
+    verify(batchMock, times(6)).submit();
+  }
+
+  @Test
+  public void testBatchRetry() {
+    final BlobId blobId1 = BlobId.of(BUCKET_NAME1, BLOB_NAME1);
+    final BlobId blobId2 = BlobId.of(BUCKET_NAME2, BLOB_NAME2);
+    options =
+        StorageOptions.newBuilder()
+            .setProjectId("projectId")
+            .setClock(TIME_SOURCE)
+            .setServiceRpcFactory(rpcFactoryMock)
+            .setRetrySettings(
+                ServiceOptions.getDefaultRetrySettings().toBuilder().setMaxAttempts(5).build())
+            .build();
+    RpcBatch batchMock = mock(RpcBatch.class);
+    when(storageRpcMock.createBatch()).thenReturn(batchMock);
+    doAnswer(
+            new Answer<Void>() {
+              @Override
+              public Void answer(InvocationOnMock invocation) {
+                RpcBatch.Callback<StorageObject> callback = invocation.getArgument(1);
+                callback.onSuccess(blobId1.toPb());
+                return null;
+              }
+            })
+        .when(batchMock)
+        .addGet(
+            Mockito.eq(blobId1.toPb()),
+            Mockito.<RpcBatch.Callback<StorageObject>>any(),
+            Mockito.<StorageRpc.Option, Object>anyMap());
+    doAnswer(
+            new Answer<Void>() {
+              @Override
+              public Void answer(InvocationOnMock invocation) {
+                RpcBatch.Callback<StorageObject> callback = invocation.getArgument(1);
+                GOOGLE_JSON_ERROR.setCode(JSON_ERROR_CODE);
+                GOOGLE_JSON_ERROR.setMessage(JSON_ERROR_MESSAGE);
+                callback.onFailure(GOOGLE_JSON_ERROR);
+                return null;
+              }
+            })
+        .when(batchMock)
+        .addGet(
+            Mockito.eq(blobId2.toPb()),
+            Mockito.<RpcBatch.Callback<StorageObject>>any(),
+            Mockito.<StorageRpc.Option, Object>anyMap());
+    initializeService();
+    StorageBatch batch = storage.batch();
+    doThrow(new StorageException(BATCH_ERROR_CODE, BATCH_ERROR_MESSAGE))
+        .doThrow(new StorageException(BATCH_ERROR_CODE, BATCH_ERROR_MESSAGE))
+        .doNothing()
+        .when(batchMock)
+        .submit();
+    StorageBatchResult<Blob> blobStorageBatchResult1 = batch.get(blobId1);
+    StorageBatchResult<Blob> blobStorageBatchResult2 = batch.get(blobId2);
+    batch.submit();
+    Blob actualBlob = blobStorageBatchResult1.get();
+    assertEquals(expectedBlob1.getName(), actualBlob.getName());
+    assertEquals(expectedBlob1.getBucket(), actualBlob.getBucket());
+    try {
+      blobStorageBatchResult2.get();
+      fail("");
+    } catch (StorageException ex) {
+      assertEquals(JSON_ERROR_CODE, ex.getCode());
+      assertEquals(JSON_ERROR_MESSAGE, ex.getMessage());
+    }
+    verify(batchMock, (times(2)))
+        .addGet(
+            Mockito.<StorageObject>any(),
+            Mockito.<RpcBatch.Callback<StorageObject>>any(),
+            Mockito.<StorageRpc.Option, Object>anyMap());
+    verify(batchMock, times(3)).submit();
   }
 }
