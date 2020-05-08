@@ -514,6 +514,7 @@ public class StorageImplMockitoTest {
       blobStorageBatchResult2.get();
       fail("");
     } catch (StorageException ex) {
+      assertEquals(JSON_ERROR_CODE,ex.getCode());
       assertEquals(JSON_ERROR_MESSAGE, ex.getMessage());
     }
     verify(batchMock, (times(2)))
