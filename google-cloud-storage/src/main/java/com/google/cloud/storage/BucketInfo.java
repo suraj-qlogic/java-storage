@@ -1780,8 +1780,6 @@ public class BucketInfo implements Serializable {
     }
     if (zoneAffinity != null) {
       bucketPb.setZoneAffinity(newArrayList(transform(zoneAffinity, Functions.toStringFunction())));
-      //      bucketPb.setZoneAffinity(transform(zoneAffinity, Functions.toStringFunction()));
-
     }
     return bucketPb;
   }
