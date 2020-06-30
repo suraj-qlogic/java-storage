@@ -18,6 +18,7 @@ package com.google.cloud.storage;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Lists.transform;
 
 import com.google.api.client.json.jackson2.JacksonFactory;
@@ -99,6 +100,8 @@ public class BucketInfo implements Serializable {
   private final IamConfiguration iamConfiguration;
   private final String locationType;
   private final Logging logging;
+  private final List<String> zoneAffinity;
+  private final Boolean zoneSeparation;
 
   /**
    * The Bucket's IAM Configuration.
@@ -1070,6 +1073,17 @@ public class BucketInfo implements Serializable {
 
     public abstract Builder setLogging(Logging logging);
 
+    /**
+     * The zone or zones from which the bucket is intended to use zonal quota. The zone or zones
+     * need to be within the bucket location otherwise the requests will fail with a 400 Bad Request
+     * response.
+     *
+     * @param zoneAffinity zoneAffinity or {@code null} for none
+     */
+    public abstract Builder setZoneAffinity(Iterable<String> zoneAffinity);
+
+    public abstract Builder setZoneSeparation(Boolean zoneSeparation);
+
     /** Creates a {@code BucketInfo} object. */
     public abstract BucketInfo build();
   }
@@ -1103,6 +1117,8 @@ public class BucketInfo implements Serializable {
     private IamConfiguration iamConfiguration;
     private String locationType;
     private Logging logging;
+    private List<String> zoneAffinity;
+    private Boolean zoneSeparation;
 
     BuilderImpl(String name) {
       this.name = name;
@@ -1136,6 +1152,8 @@ public class BucketInfo implements Serializable {
       iamConfiguration = bucketInfo.iamConfiguration;
       locationType = bucketInfo.locationType;
       logging = bucketInfo.logging;
+      zoneAffinity = bucketInfo.zoneAffinity;
+      zoneSeparation = bucketInfo.zoneSeparation;
     }
 
     @Override
@@ -1319,6 +1337,29 @@ public class BucketInfo implements Serializable {
       return this;
     }
 
+    /**
+     * The zone or zones from which the bucket is intended to use zonal quota. The zone or zones
+     * need to be within the bucket location otherwise the requests will fail with a 400 Bad Request
+     * response.
+     *
+     * @param zoneAffinity zoneAffinity or {@code null} for none
+     */
+    @Override
+    public Builder setZoneAffinity(Iterable<String> zoneAffinity) {
+      this.zoneAffinity = zoneAffinity != null ? ImmutableList.copyOf(zoneAffinity) : null;
+      return this;
+    }
+
+    /**
+     * If set, objects placed in this bucket are required to be separated by disaster domain. The
+     * value may be {@code null}.
+     */
+    @Override
+    public Builder setZoneSeparation(Boolean zoneSeparation) {
+      this.zoneSeparation = firstNonNull(zoneSeparation, Data.<Boolean>nullOf(Boolean.class));
+      return this;
+    }
+
     @Override
     Builder setLocationType(String locationType) {
       this.locationType = locationType;
@@ -1360,6 +1401,8 @@ public class BucketInfo implements Serializable {
     iamConfiguration = builder.iamConfiguration;
     locationType = builder.locationType;
     logging = builder.logging;
+    zoneAffinity = builder.zoneAffinity;
+    zoneSeparation = builder.zoneSeparation;
   }
 
   /** Returns the service-generated id for the bucket. */
@@ -1405,6 +1448,14 @@ public class BucketInfo implements Serializable {
    */
   public Boolean versioningEnabled() {
     return Data.isNull(versioningEnabled) ? null : versioningEnabled;
+  }
+
+  public List<String> getZoneAffinity() {
+    return zoneAffinity;
+  }
+
+  public Boolean getZoneSeparation() {
+    return Data.isNull(zoneSeparation) ? null : zoneSeparation;
   }
 
   /**
@@ -1766,6 +1817,12 @@ public class BucketInfo implements Serializable {
     if (logging != null) {
       bucketPb.setLogging(logging.toPb());
     }
+    if (zoneAffinity != null) {
+      bucketPb.setZoneAffinity(newArrayList(transform(zoneAffinity, Functions.toStringFunction())));
+    }
+    if (zoneSeparation != null) {
+      bucketPb.setZoneSeparation(zoneSeparation);
+    }
     return bucketPb;
   }
 
@@ -1899,6 +1956,12 @@ public class BucketInfo implements Serializable {
     Bucket.Logging logging = bucketPb.getLogging();
     if (logging != null) {
       builder.setLogging(Logging.fromPb(logging));
+    }
+    if (bucketPb.getZoneAffinity() != null) {
+      builder.setZoneAffinity(bucketPb.getZoneAffinity());
+    }
+    if (bucketPb.getZoneSeparation() != null) {
+      builder.setZoneSeparation(bucketPb.getZoneSeparation());
     }
     return builder.build();
   }

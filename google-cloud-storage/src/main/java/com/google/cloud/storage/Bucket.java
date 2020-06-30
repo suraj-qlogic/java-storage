@@ -674,6 +674,18 @@ public class Bucket extends BucketInfo {
     }
 
     @Override
+    public Builder setZoneAffinity(Iterable<String> zoneAffinity) {
+      infoBuilder.setZoneAffinity(zoneAffinity);
+      return this;
+    }
+
+    @Override
+    public Builder setZoneSeparation(Boolean zoneSeparation) {
+      infoBuilder.setZoneSeparation(zoneSeparation);
+      return this;
+    }
+
+    @Override
     Builder setLocationType(String locationType) {
       infoBuilder.setLocationType(locationType);
       return this;

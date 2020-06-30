@@ -21,4 +21,14 @@
         <method>com.google.cloud.storage.BucketInfo$Builder deleteLifecycleRules()</method>
         <differenceType>7013</differenceType>
     </difference>
+    <difference>
+        <className>com/google/cloud/storage/BucketInfo$Builder</className>
+        <method>com.google.cloud.storage.BucketInfo$Builder setZoneSeparation(java.lang.Boolean)</method>
+        <differenceType>7013</differenceType>
+    </difference>
+    <difference>
+        <className>com/google/cloud/storage/BucketInfo$Builder</className>
+        <method>com.google.cloud.storage.BucketInfo$Builder setZoneAffinity(java.lang.Iterable)</method>
+        <differenceType>7013</differenceType>
+    </difference>
 </differences>
