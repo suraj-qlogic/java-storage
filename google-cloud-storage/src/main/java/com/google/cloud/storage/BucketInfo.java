@@ -18,6 +18,7 @@ package com.google.cloud.storage;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Lists.transform;
 
 import com.google.api.client.json.jackson2.JacksonFactory;
@@ -99,6 +100,7 @@ public class BucketInfo implements Serializable {
   private final IamConfiguration iamConfiguration;
   private final String locationType;
   private final Logging logging;
+  private final List<String> zoneAffinity;
 
   /**
    * The Bucket's IAM Configuration.
@@ -1070,6 +1072,8 @@ public class BucketInfo implements Serializable {
 
     public abstract Builder setLogging(Logging logging);
 
+    public abstract Builder setZoneAffinity(Iterable<String> zoneAffinity);
+
     /** Creates a {@code BucketInfo} object. */
     public abstract BucketInfo build();
   }
@@ -1103,6 +1107,7 @@ public class BucketInfo implements Serializable {
     private IamConfiguration iamConfiguration;
     private String locationType;
     private Logging logging;
+    private List<String> zoneAffinity;
 
     BuilderImpl(String name) {
       this.name = name;
@@ -1320,6 +1325,12 @@ public class BucketInfo implements Serializable {
     }
 
     @Override
+    public Builder setZoneAffinity(Iterable<String> zoneAffinity) {
+      this.zoneAffinity = zoneAffinity != null ? ImmutableList.copyOf(zoneAffinity) : null;
+      return this;
+    }
+
+    @Override
     Builder setLocationType(String locationType) {
       this.locationType = locationType;
       return this;
@@ -1360,6 +1371,7 @@ public class BucketInfo implements Serializable {
     iamConfiguration = builder.iamConfiguration;
     locationType = builder.locationType;
     logging = builder.logging;
+    zoneAffinity = builder.zoneAffinity;
   }
 
   /** Returns the service-generated id for the bucket. */
@@ -1765,6 +1777,11 @@ public class BucketInfo implements Serializable {
     }
     if (logging != null) {
       bucketPb.setLogging(logging.toPb());
+    }
+    if (zoneAffinity != null) {
+      bucketPb.setZoneAffinity(newArrayList(transform(zoneAffinity, Functions.toStringFunction())));
+      //      bucketPb.setZoneAffinity(transform(zoneAffinity, Functions.toStringFunction()));
+
     }
     return bucketPb;
   }
